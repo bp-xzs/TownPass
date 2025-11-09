@@ -52,10 +52,16 @@ class _OfferingPageState extends State<OfferingPage> {
                     final RenderBox box =
                         context.findRenderObject() as RenderBox;
                     final localPosition = box.globalToLocal(details.offset);
+
+                    // 從函數取得最終速度
+                    final velocityGetter =
+                        details.data['velocityGetter'] as Offset Function();
+                    final velocity = velocityGetter();
+
                     _addOffering(
                       details.data['imagePath'] as String,
                       localPosition,
-                      details.data['velocity'] as Offset,
+                      velocity,
                     );
                   },
                   builder: (context, candidateData, rejectedData) {
@@ -225,13 +231,22 @@ class _PreparedItemState extends State<_PreparedItem> {
   Offset _velocity = Offset.zero;
   final List<_VelocitySample> _velocitySamples = [];
 
+  // 用來儲存最終速度的 getter
+  Offset get finalVelocity {
+    // 如果速度仍是 0，回傳預設值
+    if (_velocity.dy == 0) {
+      return const Offset(0, -500.0);
+    }
+    return _velocity;
+  }
+
   void _updateVelocity(Offset position) {
     final now = DateTime.now();
     _velocitySamples.add(_VelocitySample(position: position, time: now));
 
-    // 只保留最近 100ms 的樣本
+    // 只保留最近 200ms 的樣本（增加時間窗口）
     _velocitySamples.removeWhere(
-      (sample) => now.difference(sample.time).inMilliseconds > 100,
+      (sample) => now.difference(sample.time).inMilliseconds > 200,
     );
 
     // 使用最近的樣本計算平均速度
@@ -242,8 +257,18 @@ class _PreparedItemState extends State<_PreparedItem> {
 
       if (dt > 0) {
         final deltaPosition = last.position - first.position;
-        // 只計算垂直方向的速度，水平方向設為 0 避免橫向亂飛
-        _velocity = Offset(0, deltaPosition.dy / dt);
+        double velocityY = deltaPosition.dy / dt;
+
+        // 如果速度太小（絕對值 < 300）或方向向下（> 0），給一個預設向上速度
+        if (velocityY > -300) {
+          velocityY = -500.0; // 預設中等向上速度
+        }
+        // 限制最大速度避免飛太快
+        else if (velocityY < -2500) {
+          velocityY = -2500.0;
+        }
+
+        _velocity = Offset(0, velocityY);
       }
     }
   }
@@ -253,7 +278,7 @@ class _PreparedItemState extends State<_PreparedItem> {
     return LongPressDraggable<Map<String, dynamic>>(
       data: {
         'imagePath': widget.imagePath,
-        'velocity': _velocity,
+        'velocityGetter': () => finalVelocity, // 傳遞函數而非值
       },
       feedback: SizedBox(
         width: 120,
